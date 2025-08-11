@@ -1,0 +1,404 @@
+*&---------------------------------------------------------------------*
+*& Report ZBK_EGT_0054
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZBK_EGT_0054.
+
+INCLUDE ZBK_EGT_0054_TOP.
+INCLUDE ZBK_EGT_0054_PAI.
+INCLUDE ZBK_EGT_0054_PBO.
+INCLUDE ZBK_EGT_0054_FRM.
+
+INITIALIZATION.
+  p_xls     = TEXT-s02.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  PERFORM select_file.
+
+AT SELECTION-SCREEN.
+  PERFORM excel_indir.
+
+
+START-OF-SELECTION.
+    PERFORM get_data.
+    CALL SCREEN 0100.
+
+
+*&---------------------------------------------------------------------*
+*& Include          ZBK_EGT_0054_TOP
+*&---------------------------------------------------------------------*
+
+CONSTANTS: c_ext_xls TYPE string VALUE '*.xls'.
+DATA: gt_intern TYPE TABLE OF alsmex_tabline,
+      gs_intern LIKE alsmex_tabline.
+
+DATA: gt_out TYPE TABLE OF zbm_bilgikaydi_01,
+      gs_out TYPE          zbm_bilgikaydi_01.
+
+DATA: go_cont TYPE REF TO cl_gui_custom_container,
+      go_grid TYPE REF TO cl_gui_alv_grid.
+
+DATA: gs_layout   TYPE lvc_s_layo,
+      gt_fieldcat TYPE lvc_t_fcat,
+      gt_exclude  TYPE ui_functions,
+      lt_sort     TYPE lvc_t_sort,
+      gs_variant  TYPE disvariant.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-s01.
+  SELECTION-SCREEN SKIP.
+  PARAMETERS : p_file TYPE localfile.
+  SELECTION-SCREEN SKIP 2.
+  SELECTION-SCREEN PUSHBUTTON /1(25) p_xls USER-COMMAND usr01.
+SELECTION-SCREEN END OF BLOCK b1 .
+
+Data: lv_col TYPE i.
+
+DATA: gt_dfies_tab TYPE STANDARD TABLE OF dfies.
+
+DATA ls_excel           TYPE ole2_object.
+DATA ls_mapl            TYPE ole2_object.
+DATA ls_map             TYPE ole2_object.
+DATA ls_worksheets      TYPE ole2_object.
+DATA ls_worksheet       TYPE ole2_object.
+DATA ls_zl              TYPE ole2_object.
+DATA ls_f               TYPE ole2_object.
+DATA it_excel_fieldname TYPE zbm_tt_01.
+
+*&---------------------------------------------------------------------*
+*& Include          ZBK_EGT_0054_PAI
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  CASE sy-ucomm.
+    WHEN '&BACK' OR '&CNCL' OR '&CNCL'.
+      LEAVE TO SCREEN 0.
+
+    WHEN 'BAPI'.
+      PERFORM call_bapi_with_selected_data.
+  ENDCASE.
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*& Include          ZBK_EGT_0054_PBO
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+ SET PF-STATUS '0100'.
+ PERFORM yurutme_alv.
+ENDMODULE.
+
+*&---------------------------------------------------------------------*
+*& Include          ZBK_EGT_0054_FRM
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  DATA: lv_col      TYPE i.
+  DATA: it_fieldcat TYPE lvc_t_fcat.
+  DATA: it_fcat     TYPE slis_t_fieldcat_alv.
+  DATA: lt_raw_data TYPE truxs_t_text_data.
+
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+      i_line_header  = 'X'
+      i_tab_raw_data = lt_raw_data
+      i_filename     = p_file
+    TABLES
+      i_tab_converted_data = gt_out
+    EXCEPTIONS
+      conversion_failed = 1
+      OTHERS            = 2.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form yürütme_alv
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM yurutme_alv .
+  IF go_grid IS INITIAL.
+    CREATE OBJECT go_cont
+      EXPORTING
+        container_name = 'CC_ALV'.
+
+    CREATE OBJECT go_grid
+      EXPORTING
+        i_parent = go_cont.
+
+    PERFORM set_fieldcat.
+    PERFORM set_layout.
+    PERFORM exclude_button CHANGING gt_exclude.
+    CALL METHOD go_grid->set_table_for_first_display
+      EXPORTING
+        is_layout       = gs_layout
+      CHANGING
+        it_outtab       = gt_out
+        it_fieldcatalog = gt_fieldcat
+        it_sort         = lt_sort.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form select_file
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM select_file .
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      file_name = p_file.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form excel_indir
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM excel_indir .
+ IF sy-ucomm EQ 'USR01'.
+    DATA : lv_structure TYPE strukname.
+    lv_structure = 'ZBM_BILGIKAYDI_02'.
+    CLEAR: lv_col.
+
+
+    CALL FUNCTION 'DDIF_FIELDINFO_GET'
+      EXPORTING
+        tabname        = lv_structure
+      TABLES
+        dfies_tab      = gt_dfies_tab
+      EXCEPTIONS
+        not_found      = 1
+        internal_error = 2
+        OTHERS         = 3.
+
+    SORT gt_dfies_tab BY position ASCENDING.
+
+    CREATE OBJECT ls_excel 'EXCEL.APPLICATION'.
+    SET PROPERTY OF ls_excel  'Visible' = 1.
+    CALL METHOD OF
+      ls_excel
+        'Workbooks' = ls_mapl.
+    CALL METHOD OF
+      ls_mapl
+        'Add' = ls_map.
+    GET PROPERTY OF ls_map 'Worksheets' = ls_worksheets.
+    CALL METHOD OF
+      ls_worksheets
+        'Add' = ls_worksheet.
+    IF sy-langu = 'T'.
+      SET PROPERTY OF ls_worksheet 'NAME' = 'Örnek Excel'.
+    ENDIF.
+    LOOP AT gt_dfies_tab INTO DATA(ls_fields).
+      ADD 1 TO lv_col.
+      CALL METHOD OF
+      ls_excel
+      'Cells' = ls_zl
+      EXPORTING
+        #1      = 1
+        #2      = lv_col.
+
+      READ TABLE it_excel_fieldname INTO DATA(ls_fieldname) WITH KEY fieldname = ls_fields-fieldname.
+
+      IF sy-subrc = 0.
+        SET PROPERTY OF ls_zl 'Value' =  ls_fieldname-ddtext.
+      ELSE.
+        SET PROPERTY OF ls_zl 'Value' = ls_fields-fieldtext.
+      ENDIF.
+      GET PROPERTY OF ls_zl 'Font'  = ls_f.
+      SET PROPERTY OF ls_f  'Bold'  = 1 .
+      CLEAR ls_fieldname.
+    ENDLOOP.
+   ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form set_fieldcat
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM set_fieldcat .
+
+  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+    EXPORTING
+      i_structure_name = 'ZBM_BILGIKAYDI_01'
+    CHANGING
+      ct_fieldcat      = gt_fieldcat.
+  .
+  IF sy-subrc <> 0.
+
+  ENDIF.
+  LOOP AT gt_fieldcat ASSIGNING FIELD-SYMBOL(<fs_fcat>).
+    CASE <fs_fcat>-fieldname.
+      WHEN 'MEINS'.
+        <fs_fcat>-tech = abap_true. " bu da gizlemek
+      WHEN 'DURUM'.
+        <fs_fcat>-coltext = 'Bilgi Kaydı'. "sütunun adını düzenlemek
+
+    ENDCASE.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form set_layout
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM set_layout .
+  CLEAR:gs_layout.
+  gs_layout-cwidth_opt = 'X'.  "satırların genişliğini ayarlamak için
+  gs_layout-zebra = 'X'.
+  gs_layout-sel_mode = 'D'."çoklu seçim için
+  gs_variant-report     = sy-repid .
+ENDFORM.
+FORM exclude_button  CHANGING et_exclude LIKE gt_exclude.
+
+  DATA: ls_exclude LIKE LINE OF et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_detail.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_copy_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_delete_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_append_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_insert_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_move_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_copy.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_cut.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_paste.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_paste_new_row.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_undo.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_print.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_check.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_views.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_graph.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_maintain_variant.
+  APPEND ls_exclude TO et_exclude.
+  ls_exclude = cl_gui_alv_grid=>mc_fc_refresh.
+  APPEND ls_exclude TO et_exclude.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form call_bapi_with_selected_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM call_bapi_with_selected_data .
+
+  DATA: lt_selected       TYPE STANDARD TABLE OF zbm_bilgikaydi_01,
+        ls_data           TYPE zbm_bilgikaydi_01,
+        ls_head           TYPE bapimathead,
+        ls_client         TYPE bapi_mara,
+        ls_clientx        TYPE bapi_marax,
+        lt_desc           TYPE TABLE OF bapi_makt,
+        ls_desc           TYPE bapi_makt,
+        lt_return         TYPE TABLE OF bapiret2,
+        ls_return         TYPE bapiret2.
+
+  " Seçilen ALV satırlarını al
+  CALL METHOD go_grid->get_selected_rows
+    IMPORTING et_index_rows = DATA(lt_rows).
+
+  LOOP AT lt_rows INTO DATA(ls_row).
+    READ TABLE gt_out INDEX ls_row-index INTO ls_data.
+    IF sy-subrc = 0.
+      APPEND ls_data TO lt_selected.
+    ENDIF.
+  ENDLOOP.
+
+  IF lt_selected IS INITIAL.
+    MESSAGE 'Lütfen en az bir satır seçin.' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_selected INTO ls_data.
+
+    CLEAR: ls_head, ls_client, ls_clientx, lt_desc, lt_return.
+
+    ls_head-material     = ls_data-matnr.         " Malzeme numarası
+    ls_head-ind_sector   = 'M1'.                  " Endüstri sektörü
+    ls_head-matl_type    = 'FERT'.                " Malzeme tipi
+    ls_head-basic_view   = 'X'.                   " Basic View
+
+    ls_client-base_uom   = 'ST'.                  " Temel ölçü birimi
+    ls_client-old_mat_no = ls_data-matnr.
+
+    ls_clientx-base_uom   = 'X'.
+    ls_clientx-old_mat_no = 'X'.
+
+    ls_desc-langu     = sy-langu.
+    ls_desc-matl_desc = |Malzeme { ls_data-matnr } - ALV'den|.
+    APPEND ls_desc TO lt_desc.
+
+    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+      EXPORTING
+        headdata            = ls_head
+        clientdata          = ls_client
+        clientdatax         = ls_clientx
+      TABLES
+        materialdescription = lt_desc
+        returnmessages      = lt_return.
+
+    DATA(lv_success) = abap_true.
+    LOOP AT lt_return INTO ls_return.
+      IF ls_return-type = 'E' OR ls_return-type = 'A' OR ls_return-type = 'X'.
+        lv_success = abap_false.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_success = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = 'X'.
+
+      MESSAGE |{ ls_data-matnr } başarıyla kaydedildi.| TYPE 'S'.
+    ELSE.
+      READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+      IF sy-subrc <> 0.
+        READ TABLE lt_return INTO ls_return INDEX 1.
+      ENDIF.
+      MESSAGE |HATA - { ls_data-matnr }: { ls_return-message }| TYPE 'E'.
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM.
